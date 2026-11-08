@@ -26,7 +26,7 @@ class ImportFailure(Exception):
     pass
 
 
-def fetch(base, path, **params):
+def fetch(base, path, *, missing_ok=False, **params):
     url = base + path + ("?" + urlencode(params) if params else "")
     request = Request(url, headers={"User-Agent": "InterlagosStrategyLab/0.1", "Accept": "application/json"})
     for attempt in range(3):
@@ -34,6 +34,8 @@ def fetch(base, path, **params):
             with urlopen(request, timeout=25) as response:
                 return json.load(response)
         except HTTPError as exc:
+            if missing_ok and exc.code == 404:
+                return []
             if exc.code in (401, 403) and "openf1" in base:
                 raise ImportFailure("OpenF1 restrita no momento. Tente após a janela de 30 minutos da sessão ao vivo.") from exc
             if exc.code != 429 and exc.code < 500:
@@ -66,7 +68,7 @@ def openf1(event):
                 provenance=[dict(name="OpenF1 · documentação dos dados", url="https://openf1.org/docs/")])
     for endpoint in ENDPOINTS:
         time.sleep(0.4)
-        race[endpoint] = fetch(base, endpoint, session_key=key)
+        race[endpoint] = fetch(base, endpoint, session_key=key, missing_ok=endpoint == "starting_grid")
         print(f"  {endpoint}: {len(race[endpoint])} registros", flush=True)
     winner_laps = {row["lap_number"] for row in race["laps"]
                    if row["driver_number"] == winner.get("driver_number") and row.get("lap_duration")}
