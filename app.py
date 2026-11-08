@@ -6,13 +6,16 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import parse_qs, urlsplit
 
+from dashboard import RaceFacts
 from ingest import DATA, EVENTS
 from race import Race
+from review import RaceReview
 from strategy import compare
+from telemetry import load_lap
 
 WEB = Path(__file__).resolve().parent / "web"
 STATIC = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"),
-          "/style.css": ("style.css", "text/css")}
+          "/style.css": ("style.css", "text/css"), "/charts.js": ("charts.js", "text/javascript")}
 CACHE = {}
 CACHE_LOCK = Lock()
 
@@ -26,7 +29,9 @@ def load(event):
             return None
         if event not in CACHE or CACHE[event][0] != stamp:
             with path.open(encoding="utf-8") as source:
-                CACHE[event] = (stamp, Race(json.load(source)))
+                race = Race(json.load(source))
+                race.facts = RaceFacts(race)
+                CACHE[event] = (stamp, race)
         return CACHE[event][1]
 
 
@@ -89,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/events":
                 self.json(overview())
                 return
-            if url.path not in ("/api/replay", "/api/pits"):
+            if url.path not in ("/api/race", "/api/analysis", "/api/telemetry", "/api/replay", "/api/pits"):
                 self.json({"error": "Rota inexistente."}, 404)
                 return
             args = {key: values[-1] for key, values in parse_qs(url.query).items()}
@@ -100,7 +105,18 @@ class Handler(BaseHTTPRequestHandler):
             if race is None:
                 self.json({"error": "Corrida aguardando importação."}, 404)
                 return
+            if url.path == "/api/race":
+                self.json(race.facts.report())
+                return
             driver = int(args.get("driver", 0))
+            if url.path in ("/api/analysis", "/api/telemetry") and driver not in race.drivers:
+                raise ValueError("Piloto indisponível.")
+            if url.path == "/api/analysis":
+                self.json(RaceReview(race.facts).report(driver))
+                return
+            if url.path == "/api/telemetry":
+                self.json(load_lap(race, driver, int(args["lap"]) if "lap" in args else None))
+                return
             if url.path == "/api/pits":
                 if driver not in race.drivers:
                     raise ValueError("Piloto indisponível.")

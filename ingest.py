@@ -74,6 +74,40 @@ def openf1(event):
                    if row["driver_number"] == winner.get("driver_number") and row.get("lap_duration")}
     if len(winner_laps) < max(2, actual - 1) or not race["drivers"] or not race["stints"]:
         raise ImportFailure("Voltas, pilotos ou stints ainda estão incompletos. Cache anterior preservado.")
+    return enrich(race)
+
+
+def enrich(race):
+    """Add small optional datasets to an existing OpenF1 cache."""
+    if race["source"] != "OpenF1":
+        raise ImportFailure("Os dados extras exigem uma corrida importada da OpenF1.")
+    key = race["session"]["session_key"]
+    for endpoint in ("overtakes", "team_radio"):
+        try:
+            race[endpoint] = fetch("https://api.openf1.org/v1/", endpoint, missing_ok=True, session_key=key)
+        except (ImportFailure, TimeoutError) as exc:
+            print(f"  {endpoint}: {exc}", flush=True)
+    if not race.get("starting_grid"):
+        _, _, round_number, _ = EVENTS[race["event"]]
+        base = f"https://api.jolpi.ca/ergast/f1/2026/{round_number}/"
+        try:
+            records = fetch(base, "results/")["MRData"]["RaceTable"]["Races"]
+            if records:
+                race["starting_grid"] = [dict(driver_number=int(row["number"]), position=int(row["grid"]))
+                                         for row in records[0]["Results"]
+                                         if row.get("number") is not None and row.get("grid") is not None]
+                if race["starting_grid"]:
+                    source = dict(name="Jolpica · grid", url=base + "results/")
+                    if source not in race.setdefault("provenance", []):
+                        race["provenance"].append(source)
+        except (ImportFailure, TimeoutError, KeyError, ValueError) as exc:
+            print(f"  Grid alternativo indisponível: {exc}", flush=True)
+    if not race.get("starting_grid") and race["event"] == "interlagos":
+        grid = (1, 12, 30, 27, 6, 87, 63, 14, 23, 81, 51, 55, 43, 16, 10, 18, 77, 41, 5, 44, 3, 11)
+        race["starting_grid"] = [dict(driver_number=number, position=pos) for pos, number in enumerate(grid, 1)]
+        race["provenance"] = [row for row in race.get("provenance", []) if row["name"] != "Jolpica · grid"]
+        race["provenance"].append(dict(name="F1 · grid oficial",
+                                       url="https://www.formula1.com/en/results/2026/races/1299/brazil/starting-grid"))
     return race
 
 
@@ -92,6 +126,7 @@ def jolpica(event):
         raise ImportFailure("Jolpica ainda não publicou o resultado da corrida.")
     info = results[0]
     drivers, grid, numbers = [], [], {}
+    classification = []
     for row in info["Results"]:
         driver = row["Driver"]
         number = int(row["number"])
@@ -99,8 +134,21 @@ def jolpica(event):
         drivers.append(dict(driver_number=number, name_acronym=driver.get("code"),
                             full_name=f'{driver["givenName"]} {driver["familyName"]}',
                             team_name=row["Constructor"]["name"]))
-        if int(row["grid"]) > 0:
+        if row.get("grid") is not None:
             grid.append(dict(driver_number=number, position=int(row["grid"])))
+        status = row.get("status") or ""
+        elapsed = (row.get("Time") or {}).get("millis")
+        difference = (row.get("Time") or {}).get("time")
+        if difference and difference.startswith("+"):
+            difference = seconds(difference[1:])
+        classification.append(dict(driver_number=number, position=int(row["position"]),
+                                   number_of_laps=int(row["laps"]), points=float(row["points"]),
+                                   duration=int(elapsed)/1000 if elapsed else None,
+                                   gap_to_leader=0 if row["position"] == "1" else
+                                   difference if isinstance(difference, float) else
+                                   status if status.startswith("+") else None,
+                                   dnf=not (status == "Finished" or status.startswith("+")) and row.get("positionText") not in ("D", "W"),
+                                   dsq=row.get("positionText") == "D", dns=row.get("positionText") == "W"))
 
     lap_rows = []
     offset = 0
@@ -125,7 +173,7 @@ def jolpica(event):
             for row in (pit_data[0]["PitStops"] if pit_data else [])]
     race = dict(name=title, event=event, source="Jolpica F1", scheduled_laps=scheduled,
                 actual_laps=actual, session=dict(date_start=f'{info["date"]}T{info["time"]}'),
-                drivers=drivers, starting_grid=grid, laps=lap_rows, pit=pits)
+                drivers=drivers, starting_grid=grid, laps=lap_rows, pit=pits, session_result=classification)
     if event == "mexico":
         mexico_context.enrich(race)
     return race
@@ -149,15 +197,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("event", choices=EVENTS)
     parser.add_argument("--source", choices=("openf1", "jolpica"), default="openf1")
+    parser.add_argument("--extras", action="store_true", help="Atualizar grid, trocas de posição e rádios no cache.")
     args = parser.parse_args()
     if args.source == "jolpica" and (DATA / f"{args.event}.json").is_file():
         existing = json.loads((DATA / f"{args.event}.json").read_text(encoding="utf-8"))
         if existing.get("source") == "OpenF1":
             parser.exit(1, "O cache completo da OpenF1 já existe. Importação parcial ignorada.\n")
     try:
-        race = (openf1 if args.source == "openf1" else jolpica)(args.event)
+        if args.extras:
+            source = DATA / f"{args.event}.json"
+            if not source.exists():
+                raise ImportFailure("Importe a corrida antes de atualizar os dados extras.")
+            race = enrich(json.loads(source.read_text(encoding="utf-8")))
+        else:
+            race = (openf1 if args.source == "openf1" else jolpica)(args.event)
         save(args.event, race)
-    except (ImportFailure, KeyError, ValueError, IndexError) as exc:
+    except (ImportFailure, KeyError, ValueError, IndexError, TypeError, TimeoutError) as exc:
         parser.exit(1, f"Importação indisponível: {exc}\n")
     print(f'{race["name"]}: {race["actual_laps"]} voltas, {race["source"]} → {DATA / (args.event + ".json")}')
 

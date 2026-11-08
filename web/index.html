@@ -3,65 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pit Wall · Estratégia F1</title>
+  <title>Pit Wall · Central de Corrida</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/charts.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
   <header class="top">
-    <div><p class="eyebrow">F1 / LABORATÓRIO DE ESTRATÉGIA</p><h1>Pit Wall<span>.</span></h1></div>
-    <div class="badge"><i></i> Replay pós-corrida</div>
+    <div><p class="eyebrow">F1 / CENTRAL DE CORRIDA</p><h1>Pit Wall<span>.</span></h1></div>
+    <div class="badge"><i></i> Pós-corrida</div>
   </header>
   <main>
     <section class="hero panel">
       <div class="hero-title">
-        <div><p class="eyebrow">CENTRAL DE CORRIDA</p><h2 id="race-title">Carregando corridas</h2></div>
-        <button id="reload" type="button" title="Reler os dados importados">Atualizar dados</button>
+        <div><p class="eyebrow">CORRIDA SELECIONADA</p><h2 id="race-title">Carregando corridas</h2></div>
+        <button id="reload" type="button">Atualizar</button>
       </div>
       <p id="source" class="muted"></p>
       <div class="controls">
         <label>Corrida<select id="event"></select></label>
         <label>Piloto<select id="driver"></select></label>
-        <label>Modo<select id="mode"><option value="replay">Replay causal</option><option value="review">Revisar parada real</option></select></label>
-        <label id="scenario-label">Cenário de pista<select id="scenario"><option value="hold">Condição se mantém</option><option value="drying">Pista secando</option><option value="rain">Chuva aumenta</option></select></label>
-        <label>Horizonte<select id="horizon"><option value="8">8 voltas</option><option value="12" selected>12 voltas</option><option value="18">18 voltas</option><option value="24">24 voltas</option></select></label>
+        <button id="analyze" type="button" class="primary" disabled>Analisar estratégia do piloto ↗</button>
       </div>
-      <div id="playback" class="playback">
-        <button id="play" type="button">▶ Reproduzir</button>
-        <button id="prev" type="button" aria-label="Volta anterior">←</button>
-        <button id="next" type="button" aria-label="Próxima volta">→</button>
-        <input id="lap" type="range" min="1" max="71" value="1" aria-label="Volta">
-        <output id="lap-label" for="lap">V1</output>
-      </div>
-      <label id="pit-label" hidden>Parada registrada<select id="pit"></select></label>
       <p id="status" class="muted" role="status"></p>
     </section>
     <div id="content" hidden>
-      <section id="metrics" class="metrics" aria-label="Estado da corrida"></section>
-      <div class="columns">
-        <section class="panel">
-          <p class="eyebrow">JANELA DE DECISÃO</p>
-          <h2>Quando parar?</h2>
-          <p id="decision" class="decision"></p>
-          <p id="strategy-note" class="muted"></p>
-          <div class="scroll"><table id="strategies"></table></div>
-        </section>
-        <section class="panel">
-          <p class="eyebrow">ÚLTIMAS VOLTAS</p>
-          <h2>Ritmo do piloto</h2>
-          <div id="chart" class="chart"></div>
-          <p class="muted">Tempo por volta e composto observado. Voltas neutralizadas e de entrada/saída dos boxes ficam fora do ajuste.</p>
-          <div class="scroll"><table id="curves"></table></div>
-        </section>
-        <section class="panel field">
-          <p class="eyebrow">PELOTÃO</p>
-          <h2>Posição e intervalos</h2>
-          <p id="gap-note" class="muted"></p>
-          <div class="scroll"><table id="board"></table></div>
-        </section>
-      </div>
+      <nav id="tabs" aria-label="Seções da corrida">
+        <button type="button" data-tab="overview" aria-current="page">Visão geral</button>
+        <button type="button" data-tab="pace">Ritmo e posições</button>
+        <button type="button" data-tab="pits">Pneus e boxes</button>
+        <button type="button" data-tab="weather">Clima</button>
+        <button type="button" data-tab="telemetry">Telemetria</button>
+        <button type="button" data-tab="control">Direção de prova</button>
+        <button type="button" data-tab="analysis">Análise do piloto</button>
+      </nav>
+      <section id="view" aria-live="polite"></section>
     </div>
   </main>
-  <footer>Protótipo analítico · Variações de tempo são estimativas condicionais. O painel não calcula probabilidades calibradas.</footer>
+  <footer>Pit Wall · Análise local de Fórmula 1</footer>
 </body>
 </html>
